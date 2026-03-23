@@ -2,17 +2,49 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Runner: True Pursuit</title>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; }
-        canvas { background: #333; border: 4px solid #444; }
-        #ui { position: absolute; top: 10px; color: gold; font-size: 24px; font-weight: bold; pointer-events: none; z-index: 100; text-shadow: 2px 2px #000; }
-        #death-screen { 
-            position: absolute; display: none; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.9); flex-direction: column; justify-content: center; align-items: center; z-index: 200; 
+        body { 
+            margin: 0; 
+            background: #000; 
+            overflow: hidden; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            font-family: sans-serif; 
+            touch-action: none; /* Отключаем стандартные жесты браузера */
         }
-        #death-screen img { max-width: 85%; border: 3px solid #ff4444; }
-        #death-screen p { color: white; font-size: 22px; margin-top: 20px; font-weight: bold; }
+        canvas { 
+            background: #333; 
+            display: block;
+        }
+        #ui { 
+            position: absolute; 
+            top: 20px; 
+            left: 20px;
+            color: gold; 
+            font-size: 28px; 
+            font-weight: bold; 
+            pointer-events: none; 
+            z-index: 100; 
+            text-shadow: 2px 2px #000; 
+        }
+        #death-screen { 
+            position: absolute; 
+            display: none; 
+            top: 0; left: 0; 
+            width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.9); 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            z-index: 200; 
+            text-align: center;
+        }
+        #death-screen img { max-width: 80%; border: 3px solid #ff4444; }
+        #death-screen p { color: white; font-size: 20px; margin-top: 20px; padding: 0 20px; }
     </style>
 </head>
 <body>
@@ -21,7 +53,7 @@
     
     <div id="death-screen">
         <img id="go-gif" src="gameover.gif">
-        <p>О НЕТ! ВАЛЁК ПОПАЛ В ПАРОВОЗИК [ПРОБЕЛ]</p>
+        <p>О НЕТ! ВАЛЁК ПОПАЛ В ПАРОВОЗИК<br>[НАЖМИ НА ЭКРАН]</p>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -29,8 +61,15 @@
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-canvas.width = 400;
-canvas.height = 700;
+
+// --- АДАПТИВНОСТЬ ПОД ЭКРАН ТЕЛЕФОНА ---
+function resize() {
+    // Растягиваем канвас на всю ширину и высоту окна
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
 
 const imgNames = {
     p: 'player.png', c: 'coin.png', bg: 'background.png',
@@ -48,17 +87,18 @@ for (let key in imgNames) {
     images[key].onerror = () => { if (++loaded === total) init(); };
 }
 
-let score, speed, isGameOver, bgY, currentV;
+let score, speed, isGameOver, bgY, currentV, laneW;
 let obstacles, coins, player, villain;
-const laneW = canvas.width / 3;
 
 function init() {
     score = 0; speed = 5; isGameOver = false; bgY = 0;
     obstacles = []; coins = [];
+    laneW = canvas.width / 3; // Пересчитываем ширину полос под экран
     currentV = Math.floor(Math.random() * 3) + 1;
     
-    player = { lane: 1, x: laneW * 1.5, y: 300, w: 70, h: 90 };
-    villain = { x: laneW * 1.5, y: 620, w: 90, h: 110 };
+    // Позиционируем игрока относительно высоты экрана
+    player = { lane: 1, x: laneW * 1.5, y: canvas.height * 0.45, w: 70, h: 90 };
+    villain = { x: laneW * 1.5, y: canvas.height * 0.85, w: 90, h: 110 };
     
     document.getElementById("score").innerText = "0";
     document.getElementById("death-screen").style.display = "none";
@@ -66,6 +106,9 @@ function init() {
     loop();
 }
 
+// --- УПРАВЛЕНИЕ ДЛЯ ТЕЛЕФОНА (И ПК ТОЖЕ) ---
+window.addEventListener("touchstart", handleInput);
+window.addEventListener("mousedown", handleInput); // Для тестов на ПК кликом
 window.addEventListener("keydown", e => {
     if (isGameOver && e.code === "Space") init();
     if (!isGameOver) {
@@ -73,6 +116,23 @@ window.addEventListener("keydown", e => {
         if ((e.key === "ArrowRight" || e.code === "KeyD") && player.lane < 2) player.lane++;
     }
 });
+
+function handleInput(e) {
+    if (isGameOver) {
+        init();
+        return;
+    }
+    
+    // Определяем X координату нажатия (будь то мышь или палец)
+    const touchX = e.touches ? e.touches[0].clientX : e.clientX;
+    
+    // Если нажали в левой трети экрана — влево, в правой — вправо
+    if (touchX < canvas.width / 2) {
+        if (player.lane > 0) player.lane--;
+    } else {
+        if (player.lane < 2) player.lane++;
+    }
+}
 
 function spawn() {
     if (isGameOver || Math.random() > 0.04) return;
@@ -92,41 +152,35 @@ function update() {
     spawn();
     bgY = (bgY + speed * 0.4) % canvas.height;
     
-    // Игрок движется к цели
     const targetX = player.lane * laneW + laneW / 2;
     player.x += (targetX - player.x) * 0.18;
 
-    // ЗЛОДЕЙ ПРЕСЛЕДУЕТ ИГРОКА ПО X
     villain.x += (player.x - villain.x) * 0.12;
 
-    // Злодей медленно откатывается вниз
-    if (villain.y < 620) villain.y += 0.5;
+    // Злодей медленно откатывается вниз (адаптировано под высоту)
+    const baseY = canvas.height * 0.85;
+    if (villain.y < baseY) villain.y += 0.5;
 
-    // Монетки
     for (let i = coins.length - 1; i >= 0; i--) {
         coins[i].y += speed;
         if (Math.abs(player.x - coins[i].x) < 45 && Math.abs(player.y - coins[i].y) < 45) {
-            score += 10;
-            speed += 0.04;
+            score += 10; speed += 0.04;
             document.getElementById("score").innerText = score;
             coins.splice(i, 1);
         } else if (coins[i].y > canvas.height + 50) coins.splice(i, 1);
     }
 
-    // Препятствия
     for (let i = obstacles.length - 1; i >= 0; i--) {
         let o = obstacles[i];
         o.y += speed;
         if (o.flying) o.x += o.vx;
 
-        // Коллизия игрока (запинка)
         if (!o.flying && Math.abs(player.x - o.x) < 45 && Math.abs(player.y - o.y) < 40) {
             o.flying = true;
             o.vx = (o.x < canvas.width/2) ? -10 : 10;
             villain.y -= 130; 
         }
 
-        // Злодей сносит препятствия (теперь учитываем его X)
         if (!o.flying && o.y > villain.y - 30 && Math.abs(o.x - villain.x) < 60) {
             o.flying = true;
             o.vx = (o.x < villain.x) ? -15 : 15;
@@ -135,7 +189,6 @@ function update() {
         if (o.y > canvas.height + 100) obstacles.splice(i, 1);
     }
 
-    // Проверка смерти
     if (villain.y <= player.y + 50) {
         isGameOver = true;
         document.getElementById("death-screen").style.display = "flex";
@@ -145,26 +198,22 @@ function update() {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Фон
     if (images.bg.complete) {
+        // Рисуем фон, растягивая его на ширину экрана
         ctx.drawImage(images.bg, 0, bgY, canvas.width, canvas.height);
         ctx.drawImage(images.bg, 0, bgY - canvas.height, canvas.width, canvas.height);
     }
 
-    // 2. Монеты
     coins.forEach(c => ctx.drawImage(images.c, c.x - 20, c.y - 20, 40, 40));
 
-    // 3. Препятствия
     obstacles.forEach(o => {
         ctx.drawImage(images[`o${o.type}`], o.x - 45, o.y - 25, 90, 50);
     });
 
-    // 4. Игрок
     ctx.drawImage(images.p, player.x - player.w/2, player.y - player.h/2, player.w, player.h);
 
-    // 5. Злодей (теперь по центру своей X координаты)
     const vImg = images[`v${currentV}`];
-    ctx.drawImage(vImg, villain.x - villain.w/2, villain.y, villain.w, villain.h);
+    if (vImg) ctx.drawImage(vImg, villain.x - villain.w/2, villain.y, villain.w, villain.h);
 }
 
 function loop() {
